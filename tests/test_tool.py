@@ -315,6 +315,76 @@ class TestLeftClickDrag:
             mock_key_up.assert_called_once_with("shift")
 
 
+class TestHoldKey:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    async def test_missing_text_returns_error(self, tool):
+        result = await tool.hold_key(duration=1)
+        assert result.error is not None
+
+    async def test_missing_duration_returns_error(self, tool):
+        result = await tool.hold_key(text="shift")
+        assert result.error is not None
+
+    async def test_negative_duration_returns_error(self, tool):
+        result = await tool.hold_key(text="shift", duration=-1)
+        assert result.error is not None
+
+    async def test_excessive_duration_returns_error(self, tool):
+        result = await tool.hold_key(text="shift", duration=101)
+        assert result.error is not None
+
+    async def test_holds_key_for_duration(self, tool, mock_screenshot):
+        with (
+            patch("mac.tool.pyautogui.keyDown") as mock_down,
+            patch("mac.tool.pyautogui.keyUp") as mock_up,
+            patch("mac.tool.asyncio.sleep") as mock_sleep,
+        ):
+            result = await tool.hold_key(text="shift", duration=2)
+            mock_down.assert_called_once_with("shift")
+            mock_sleep.assert_any_call(2)
+            mock_up.assert_called_once_with("shift")
+        assert result.error is None
+        assert result.base64_image is not None
+
+    async def test_maps_x11_key(self, tool, mock_screenshot):
+        with (
+            patch("mac.tool.pyautogui.keyDown") as mock_down,
+            patch("mac.tool.pyautogui.keyUp") as mock_up,
+            patch("mac.tool.asyncio.sleep"),
+        ):
+            await tool.hold_key(text="super", duration=1)
+            mock_down.assert_called_once_with("command")
+            mock_up.assert_called_once_with("command")
+
+
+class TestWait:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    async def test_missing_duration_returns_error(self, tool):
+        result = await tool.wait()
+        assert result.error is not None
+
+    async def test_negative_duration_returns_error(self, tool):
+        result = await tool.wait(duration=-1)
+        assert result.error is not None
+
+    async def test_excessive_duration_returns_error(self, tool):
+        result = await tool.wait(duration=101)
+        assert result.error is not None
+
+    async def test_waits_and_screenshots(self, tool, mock_screenshot_delay):
+        with patch("mac.tool.asyncio.sleep") as mock_sleep:
+            result = await tool.wait(duration=3)
+            mock_sleep.assert_any_call(3)
+        assert result.base64_image is not None
+        assert result.error is None
+
+
 class TestScroll:
     @pytest.fixture
     def tool(self):

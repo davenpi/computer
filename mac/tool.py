@@ -188,8 +188,8 @@ class MacTool:
             logger.warning(
                 "No scaling target found for display %dx%d (ratio %.3f). "
                 "Screenshots will be sent at full resolution and may be "
-                "resized by the API, causing coordinate mapping errors. "
-                "Add a ScalingTarget for this display.",
+                "resized by the API, causing coordinate mapping errors and poor model "
+                "performance. Add a ScalingTarget for this display.",
                 self.width,
                 self.height,
                 ratio,
@@ -204,6 +204,7 @@ class MacTool:
         key: str | None = None,
         scroll_direction: ScrollDirection | None = None,
         scroll_amount: int | None = None,
+        duration: int | float | None = None,
         **kwargs,
     ):
 
@@ -234,6 +235,61 @@ class MacTool:
             return await self.mouse_button(action)
         elif action == Action.SCROLL.value:
             return await self.scroll(coordinate, scroll_direction, scroll_amount, text)
+        elif action == Action.HOLD_KEY.value:
+            return await self.hold_key(text, duration)
+        elif action == Action.WAIT.value:
+            return await self.wait(duration)
+
+    async def hold_key(
+        self,
+        text: str | None = None,
+        duration: int | float | None = None,
+    ) -> ToolResult:
+        """Hold a key down for a specified duration.
+
+        Parameters
+        ----------
+        text : str
+            The key to hold (e.g. "shift", "Alt_L").
+        duration : int or float
+            How long to hold the key in seconds.
+
+        Returns
+        -------
+        ToolResult
+            Error on failure, empty output on success.
+        """
+        if text is None:
+            return ToolResult(error="text is required for hold_key")
+        if not isinstance(duration, (int, float)) or duration < 0:
+            return ToolResult(error="duration must be a non-negative number")
+        if duration > 100:
+            return ToolResult(error="duration is too long")
+        key = self._map_key(text)
+        pyautogui.keyDown(key)
+        await asyncio.sleep(duration)
+        pyautogui.keyUp(key)
+        return await self._result_with_screenshot(ToolResult())
+
+    async def wait(self, duration: int | float | None = None) -> ToolResult:
+        """Wait for a specified duration, then take a screenshot.
+
+        Parameters
+        ----------
+        duration : int or float
+            How long to wait in seconds.
+
+        Returns
+        -------
+        ToolResult
+            Screenshot after the wait.
+        """
+        if not isinstance(duration, (int, float)) or duration < 0:
+            return ToolResult(error="duration must be a non-negative number")
+        if duration > 100:
+            return ToolResult(error="duration is too long")
+        await asyncio.sleep(duration)
+        return await self.screenshot()
 
     async def scroll(
         self,
