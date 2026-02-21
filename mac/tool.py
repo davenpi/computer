@@ -199,6 +199,7 @@ class MacTool:
         self,
         action: str,
         text: str | None = None,
+        start_coordinate: tuple[int, int] | None = None,
         coordinate: tuple[int, int] | None = None,
         key: str | None = None,
         **kwargs,
@@ -218,6 +219,8 @@ class MacTool:
             Action.TRIPLE_CLICK.value,
         ):
             return await self.click(action, text, coordinate, key)
+        elif action == Action.LEFT_CLICK_DRAG.value:
+            return await self.left_click_drag(text, start_coordinate, coordinate, key)
 
     async def screenshot(self) -> ToolResult:
         """Capture the screen and return a scaled, base64-encoded PNG.
@@ -299,9 +302,9 @@ class MacTool:
     ) -> ToolResult:
         """Move the mouse to a specific coordinate."""
         if text is not None:
-            return ToolResult(error="Text is not supported for mouse move")
+            return ToolResult(error="text is not accepted for mouse_move")
         if coordinate is None:
-            return ToolResult(error="Coordinate is required for mouse move")
+            return ToolResult(error="coordinate is required for mouse_move")
         try:
             x, y = self.scale_coordinates(
                 ScalingSource.API, coordinate[0], coordinate[1]
@@ -394,6 +397,52 @@ class MacTool:
             pyautogui.keyDown(modifier)
         click_kwargs = CLICK_MAP[action]
         pyautogui.click(**click_kwargs)
+        if modifier:
+            pyautogui.keyUp(modifier)
+        return await self._result_with_screenshot(ToolResult())
+
+    async def left_click_drag(
+        self,
+        text: str | None = None,
+        start_coordinate: tuple[int, int] | None = None,
+        coordinate: tuple[int, int] | None = None,
+        key: str | None = None,
+    ) -> ToolResult:
+        """Click and drag from start_coordinate to coordinate.
+
+        Parameters
+        ----------
+        text : str or None
+            Not accepted. Returns error if provided.
+        start_coordinate : tuple[int, int]
+            Where to start the drag.
+        coordinate : tuple[int, int]
+            Where to end the drag.
+        key : str or None
+            Modifier key to hold during the drag (e.g. "shift").
+        """
+        if text is not None:
+            return ToolResult(error="text is not accepted for left_click_drag")
+        if start_coordinate is None:
+            return ToolResult(error="start_coordinate is required for left_click_drag")
+        if coordinate is None:
+            return ToolResult(error="coordinate is required for left_click_drag")
+        try:
+            start_x, start_y = self.scale_coordinates(
+                ScalingSource.API, start_coordinate[0], start_coordinate[1]
+            )
+            end_x, end_y = self.scale_coordinates(
+                ScalingSource.API, coordinate[0], coordinate[1]
+            )
+        except ToolError as e:
+            return ToolResult(error=str(e))
+        modifier = self._map_key(key) if key else None
+        if modifier:
+            pyautogui.keyDown(modifier)
+        pyautogui.moveTo(start_x, start_y)
+        pyautogui.mouseDown(button="left")
+        pyautogui.moveTo(end_x, end_y)
+        pyautogui.mouseUp(button="left")
         if modifier:
             pyautogui.keyUp(modifier)
         return await self._result_with_screenshot(ToolResult())

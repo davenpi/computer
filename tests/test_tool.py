@@ -240,3 +240,59 @@ class TestClick:
             result = await tool.click(action)
             mock_click.assert_called_once_with(button=button, clicks=clicks)
         assert result.error is None
+
+
+class TestLeftClickDrag:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    async def test_text_not_accepted(self, tool):
+        result = await tool.left_click_drag(
+            text="hello", start_coordinate=(0, 0), coordinate=(100, 100)
+        )
+        assert result.error is not None
+
+    async def test_missing_start_coordinate(self, tool):
+        result = await tool.left_click_drag(coordinate=(100, 100))
+        assert result.error is not None
+        assert "start_coordinate" in result.error
+
+    async def test_missing_coordinate(self, tool):
+        result = await tool.left_click_drag(start_coordinate=(0, 0))
+        assert result.error is not None
+        assert "coordinate" in result.error
+
+    async def test_drags_between_scaled_coordinates(self, tool, mock_screenshot):
+        with (
+            patch("mac.tool.pyautogui.moveTo") as mock_move,
+            patch("mac.tool.pyautogui.mouseDown") as mock_down,
+            patch("mac.tool.pyautogui.mouseUp") as mock_up,
+        ):
+            result = await tool.left_click_drag(
+                start_coordinate=(100, 100), coordinate=(500, 400)
+            )
+            start = tool.scale_coordinates(ScalingSource.API, 100, 100)
+            end = tool.scale_coordinates(ScalingSource.API, 500, 400)
+            assert mock_move.call_args_list == [
+                (start,),
+                (end,),
+            ]
+            mock_down.assert_called_once_with(button="left")
+            mock_up.assert_called_once_with(button="left")
+        assert result.error is None
+        assert result.base64_image is not None
+
+    async def test_drag_with_modifier_key(self, tool, mock_screenshot):
+        with (
+            patch("mac.tool.pyautogui.moveTo"),
+            patch("mac.tool.pyautogui.mouseDown"),
+            patch("mac.tool.pyautogui.mouseUp"),
+            patch("mac.tool.pyautogui.keyDown") as mock_key_down,
+            patch("mac.tool.pyautogui.keyUp") as mock_key_up,
+        ):
+            await tool.left_click_drag(
+                start_coordinate=(100, 100), coordinate=(500, 400), key="shift"
+            )
+            mock_key_down.assert_called_once_with("shift")
+            mock_key_up.assert_called_once_with("shift")
