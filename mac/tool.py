@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from enum import Enum, StrEnum
+from io import BytesIO
 from typing import Literal
 
 import pyautogui
@@ -205,6 +206,7 @@ class MacTool:
         scroll_direction: ScrollDirection | None = None,
         scroll_amount: int | None = None,
         duration: int | float | None = None,
+        region: tuple[int, int, int, int] | None = None,
         **kwargs,
     ):
 
@@ -239,6 +241,41 @@ class MacTool:
             return await self.hold_key(text, duration)
         elif action == Action.WAIT.value:
             return await self.wait(duration)
+        elif action == Action.ZOOM.value:
+            return await self.zoom(region)
+
+    async def zoom(self, region: tuple[int, int, int, int] | None = None) -> ToolResult:
+        """Zoom into a region of the screen by cropping a screenshot.
+
+        Parameters
+        ----------
+        region : tuple[int, int, int, int]
+            Bounding box as (x0, y0, x1, y1) in API coordinates.
+
+        Returns
+        -------
+        ToolResult
+            Cropped screenshot of the region.
+        """
+        if region is None or not isinstance(region, (list, tuple)) or len(region) != 4:
+            return ToolResult(
+                error="region must be a tuple of 4 coordinates (x0, y0, x1, y1)"
+            )
+        if not all(isinstance(c, int) and c >= 0 for c in region):
+            return ToolResult(error="region must contain non-negative integers")
+        try:
+            x0, y0 = self.scale_coordinates(ScalingSource.API, region[0], region[1])
+            x1, y1 = self.scale_coordinates(ScalingSource.API, region[2], region[3])
+        except ToolError as e:
+            return ToolResult(error=str(e))
+        screenshot = await self.screenshot()
+        if not screenshot.base64_image:
+            return ToolResult(error="failed to take screenshot for zoom")
+        img = Image.open(BytesIO(base64.b64decode(screenshot.base64_image)))
+        cropped = img.crop((x0, y0, x1, y1))
+        buf = BytesIO()
+        cropped.save(buf, format="PNG")
+        return ToolResult(base64_image=base64.b64encode(buf.getvalue()).decode())
 
     async def hold_key(
         self,

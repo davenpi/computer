@@ -385,6 +385,49 @@ class TestWait:
         assert result.error is None
 
 
+def make_screenshot_result(width=200, height=200):
+    """Create a ToolResult with a real base64 PNG for zoom tests."""
+    img = Image.new("RGB", (width, height), color="red")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return ToolResult(base64_image=base64.b64encode(buf.getvalue()).decode())
+
+
+class TestZoom:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    async def test_missing_region_returns_error(self, tool):
+        result = await tool.zoom()
+        assert result.error is not None
+
+    async def test_wrong_length_region_returns_error(self, tool):
+        result = await tool.zoom(region=(0, 0, 100))
+        assert result.error is not None
+
+    async def test_negative_coords_returns_error(self, tool):
+        result = await tool.zoom(region=(-1, 0, 100, 100))
+        assert result.error is not None
+
+    async def test_non_int_coords_returns_error(self, tool):
+        result = await tool.zoom(region=(0.5, 0, 100, 100))
+        assert result.error is not None
+
+    async def test_returns_cropped_image(self, tool):
+        screenshot = make_screenshot_result(tool.width, tool.height)
+        with patch.object(
+            MacTool, "screenshot", new_callable=AsyncMock, return_value=screenshot
+        ):
+            result = await tool.zoom(region=(0, 0, 50, 50))
+        assert result.error is None
+        assert result.base64_image is not None
+        img = Image.open(BytesIO(base64.b64decode(result.base64_image)))
+        assert img.format == "PNG"
+        assert img.width > 0
+        assert img.height > 0
+
+
 class TestScroll:
     @pytest.fixture
     def tool(self):
