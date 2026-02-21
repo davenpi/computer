@@ -296,3 +296,27 @@ class TestLeftClickDrag:
             )
             mock_key_down.assert_called_once_with("shift")
             mock_key_up.assert_called_once_with("shift")
+
+
+class TestCursorPosition:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    async def test_returns_scaled_coordinates(self, tool):
+        with patch("mac.tool.pyautogui.position") as mock_pos:
+            mock_pos.return_value = type(
+                "Point", (), {"x": tool.width // 2, "y": tool.height // 2}
+            )()
+            result = await tool.cursor_position()
+        expected = tool.scale_coordinates(
+            ScalingSource.COMPUTER, tool.width // 2, tool.height // 2
+        )
+        assert result.output == f"X={expected[0]},Y={expected[1]}"
+        assert result.error is None
+
+    async def test_no_screenshot_attached(self, tool):
+        with patch("mac.tool.pyautogui.position") as mock_pos:
+            mock_pos.return_value = type("Point", (), {"x": 0, "y": 0})()
+            result = await tool.cursor_position()
+        assert result.base64_image is None

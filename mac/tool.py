@@ -221,6 +221,20 @@ class MacTool:
             return await self.click(action, text, coordinate, key)
         elif action == Action.LEFT_CLICK_DRAG.value:
             return await self.left_click_drag(text, start_coordinate, coordinate, key)
+        elif action == Action.CURSOR_POSITION.value:
+            return await self.cursor_position()
+
+    async def cursor_position(self) -> ToolResult:
+        """Get the current cursor position in API coordinate space.
+
+        Returns
+        -------
+        ToolResult
+            Output string with X=<x>,Y=<y> in API-scaled coordinates.
+        """
+        pos = pyautogui.position()
+        x, y = self.scale_coordinates(ScalingSource.COMPUTER, pos.x, pos.y)
+        return ToolResult(output=f"X={x},Y={y}")
 
     async def screenshot(self) -> ToolResult:
         """Capture the screen and return a scaled, base64-encoded PNG.
