@@ -4,8 +4,7 @@ from unittest.mock import patch
 
 import pytest
 from PIL import Image
-
-from tool import MacTool, ToolResult
+from tool import MacTool, ScalingSource, ToolError, ToolResult
 
 
 class TestToolResult:
@@ -51,9 +50,9 @@ class TestScreenshot:
             pytest.skip("No scaling target for this display")
         result = await tool.screenshot()
         image_bytes = base64.b64decode(result.base64_image)
-        img = Image.open(BytesIO(image_bytes))
-        assert img.width == tool._scaling_target["width"]
-        assert img.height == tool._scaling_target["height"]
+        with Image.open(BytesIO(image_bytes)) as img:
+            assert img.width == tool._scaling_target.width
+            assert img.height == tool._scaling_target.height
 
 
 class TestKey:
@@ -92,3 +91,76 @@ class TestKey:
         assert tool._map_key("Return") == "return"
         assert tool._map_key("alt") == "option"
         assert tool._map_key("BackSpace") == "backspace"
+
+
+class TestScaleCoordinates:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    def test_no_scaling_target_passthrough(self, tool):
+        tool._scaling_target = None
+        assert tool.scale_coordinates(ScalingSource.API, 500, 300) == (500, 300)
+        assert tool.scale_coordinates(ScalingSource.COMPUTER, 500, 300) == (500, 300)
+
+    def test_api_to_screen_scales_up(self, tool):
+        if tool._scaling_target is None:
+            pytest.skip("No scaling target for this display")
+        # A point in the middle of the scaled image should map to
+        # roughly the middle of the real screen
+        mid_x = tool._scaling_target.width // 2
+        mid_y = tool._scaling_target.height // 2
+        sx, sy = tool.scale_coordinates(ScalingSource.API, mid_x, mid_y)
+        assert abs(sx - tool.width // 2) <= 1
+        assert abs(sy - tool.height // 2) <= 1
+
+    def test_screen_to_api_scales_down(self, tool):
+        if tool._scaling_target is None:
+            pytest.skip("No scaling target for this display")
+        mid_x = tool.width // 2
+        mid_y = tool.height // 2
+        ax, ay = tool.scale_coordinates(ScalingSource.COMPUTER, mid_x, mid_y)
+        assert abs(ax - tool._scaling_target.width // 2) <= 1
+        assert abs(ay - tool._scaling_target.height // 2) <= 1
+
+    def test_out_of_bounds_raises_error(self, tool):
+        with pytest.raises(ToolError):
+            tool.scale_coordinates(ScalingSource.API, 99999, 99999)
+
+    def test_negative_coords_raises_error(self, tool):
+        with pytest.raises(ToolError):
+            tool.scale_coordinates(ScalingSource.API, -1, 100)
+
+    def test_roundtrip(self, tool):
+        if tool._scaling_target is None:
+            pytest.skip("No scaling target for this display")
+        # API -> screen -> API should give back ~the same coordinates
+        original = (400, 300)
+        screen = tool.scale_coordinates(ScalingSource.API, *original)
+        back = tool.scale_coordinates(ScalingSource.COMPUTER, *screen)
+        assert abs(back[0] - original[0]) <= 1
+        assert abs(back[1] - original[1]) <= 1
+
+
+class TestMouseMove:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    @pytest.mark.asyncio
+    async def test_missing_coordinate_returns_error(self, tool):
+        result = await tool.mouse_move(coordinate=None)
+        assert result.error is not None
+
+    @pytest.mark.asyncio
+    async def test_text_not_accepted(self, tool):
+        result = await tool.mouse_move(text="hello", coordinate=(100, 100))
+        assert result.error is not None
+
+    @pytest.mark.asyncio
+    async def test_moves_with_scaled_coordinates(self, tool):
+        with patch("tool.pyautogui.moveTo") as mock_move:
+            result = await tool.mouse_move(coordinate=(100, 100))
+            expected = tool.scale_coordinates(ScalingSource.API, 100, 100)
+            mock_move.assert_called_once_with(*expected)
+        assert result.error is None
