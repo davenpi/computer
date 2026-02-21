@@ -112,6 +112,23 @@ class TestKey:
         assert tool._map_key("BackSpace") == "backspace"
 
 
+class TestType:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    async def test_missing_text_returns_error(self, tool):
+        result = await tool.type(None)
+        assert result.error is not None
+
+    async def test_types_text(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.write") as mock_write:
+            result = await tool.type("hello world")
+            mock_write.assert_called_once_with("hello world", interval=0.012)
+        assert result.error is None
+        assert result.base64_image is not None
+
+
 class TestScaleCoordinates:
     @pytest.fixture
     def tool(self):

@@ -209,6 +209,8 @@ class MacTool:
             return await self.screenshot()
         elif action == Action.KEY.value:
             return await self.key(text)
+        elif action == Action.TYPE.value:
+            return await self.type(text)
         elif action == Action.MOUSE_MOVE.value:
             return await self.mouse_move(text, coordinate)
         elif action in (
@@ -309,6 +311,24 @@ class MacTool:
             pyautogui.press(keys[0])
         else:
             pyautogui.hotkey(*keys)
+        return await self._result_with_screenshot(ToolResult())
+
+    async def type(self, text: str | None = None) -> ToolResult:
+        """Type a string of text.
+
+        Parameters
+        ----------
+        text : str
+            The text to type.
+
+        Returns
+        -------
+        ToolResult
+            Error on failure, empty output on success.
+        """
+        if text is None:
+            return ToolResult(error="text is required for type")
+        pyautogui.write(text, interval=0.012)
         return await self._result_with_screenshot(ToolResult())
 
     async def mouse_move(
