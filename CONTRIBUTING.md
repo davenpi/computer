@@ -5,6 +5,8 @@
 1. Clone the repo and install dependencies:
 
    ```bash
+   git clone https://github.com/davenpi/computer.git
+   cd computer
    uv sync
    ```
 
@@ -15,6 +17,11 @@
    ```
 
    This sets up automatic formatting (`ruff format`) and linting (`ruff check`) on every commit.
+
+## Testing
+
+- Run tests with `pytest` (pre-commit runs them automatically on commit)
+- Add tests for new functionality in `tests/`
 
 ## Code Quality
 

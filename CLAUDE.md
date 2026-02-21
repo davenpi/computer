@@ -6,6 +6,11 @@
 
 - Use NumPy-style docstrings
 
+## Testing
+
+- Run tests with `pytest`
+- Add tests for new functionality in `tests/`
+
 ## Git
 
 - Use conventional commits (e.g., `feat:`, `fix:`, `docs:`, `refactor:`)
