@@ -6,3 +6,4 @@
 
 ## Git
 - Use conventional commits (e.g., `feat:`, `fix:`, `docs:`, `refactor:`)
+- Do not include `Co-Authored-By` lines in commits or PRs
