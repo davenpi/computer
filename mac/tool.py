@@ -6,6 +6,7 @@ Vision API and its documented max image dimensions. This is a learning
 environment and not intended for production use.
 """
 
+import asyncio
 import base64
 import logging
 import subprocess
@@ -74,6 +75,12 @@ class ToolResult:
     output: str | None = None
     error: str | None = None
     base64_image: str | None = None
+
+    def with_image(self, base64_image: str | None) -> "ToolResult":
+        """Return a new ToolResult with the given screenshot attached."""
+        return ToolResult(
+            output=self.output, error=self.error, base64_image=base64_image
+        )
 
 
 class Action(Enum):
@@ -152,6 +159,9 @@ class ScalingSource(StrEnum):
     API = "API"
 
 
+SCREENSHOT_DELAY = 2.0
+
+
 class MacTool:
     def __init__(self):
         bounds = CGDisplayBounds(CGMainDisplayID())
@@ -221,6 +231,24 @@ class MacTool:
                 base64_image=base64.b64encode(open(tmp_path, "rb").read()).decode()
             )
 
+    async def _result_with_screenshot(
+        self, result: ToolResult, take_screenshot: bool = True
+    ) -> ToolResult:
+        """Optionally attach a screenshot to a result after a delay.
+
+        Parameters
+        ----------
+        result : ToolResult
+            The action result to attach a screenshot to.
+        take_screenshot : bool
+            If True, wait for the screen to settle and attach a screenshot.
+        """
+        if not take_screenshot:
+            return result
+        await asyncio.sleep(SCREENSHOT_DELAY)
+        screenshot = await self.screenshot()
+        return result.with_image(screenshot.base64_image)
+
     def _map_key(self, key: str) -> str:
         """Map an X11 key name to a pyautogui key name."""
         return KEY_MAP.get(key, key.lower())
@@ -248,7 +276,7 @@ class MacTool:
             pyautogui.press(keys[0])
         else:
             pyautogui.hotkey(*keys)
-        return ToolResult()
+        return await self._result_with_screenshot(ToolResult())
 
     async def mouse_move(
         self, text: str | None = None, coordinate: tuple[int, int] | None = None
@@ -265,7 +293,7 @@ class MacTool:
         except ToolError as e:
             return ToolResult(error=str(e))
         pyautogui.moveTo(x, y)
-        return ToolResult()
+        return await self._result_with_screenshot(ToolResult())
 
     def scale_coordinates(
         self, source: ScalingSource, x: int, y: int

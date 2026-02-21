@@ -1,10 +1,29 @@
 import base64
 from io import BytesIO
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from PIL import Image
-from tool import MacTool, ScalingSource, ToolError, ToolResult
+
+from mac.tool import MacTool, ScalingSource, ToolError, ToolResult
+
+MOCK_SCREENSHOT = ToolResult(base64_image="fake_base64")
+
+
+@pytest.fixture
+def mock_screenshot_delay():
+    """Mock the screenshot delay to 0 for fast tests."""
+    with patch("mac.tool.SCREENSHOT_DELAY", 0):
+        yield
+
+
+@pytest.fixture
+def mock_screenshot(mock_screenshot_delay):
+    """Mock both the delay and screenshot for non-screenshot tests."""
+    with patch.object(
+        MacTool, "screenshot", new_callable=AsyncMock, return_value=MOCK_SCREENSHOT
+    ):
+        yield
 
 
 class TestToolResult:
@@ -24,6 +43,12 @@ class TestToolResult:
         result = ToolResult()
         with pytest.raises(AttributeError):
             result.output = "nope"
+
+    def test_with_image(self):
+        result = ToolResult(output="hello")
+        updated = result.with_image("img_data")
+        assert updated.output == "hello"
+        assert updated.base64_image == "img_data"
 
 
 class TestScreenshot:
@@ -72,18 +97,20 @@ class TestKey:
         assert "unrecognized" in result.error
 
     @pytest.mark.asyncio
-    async def test_single_key(self, tool):
-        with patch("tool.pyautogui.press") as mock_press:
+    async def test_single_key(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.press") as mock_press:
             result = await tool.key("Return")
             mock_press.assert_called_once_with("return")
         assert result.error is None
+        assert result.base64_image is not None
 
     @pytest.mark.asyncio
-    async def test_key_combo(self, tool):
-        with patch("tool.pyautogui.hotkey") as mock_hotkey:
+    async def test_key_combo(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.hotkey") as mock_hotkey:
             result = await tool.key("super+c")
             mock_hotkey.assert_called_once_with("command", "c")
         assert result.error is None
+        assert result.base64_image is not None
 
     @pytest.mark.asyncio
     async def test_maps_x11_keys(self, tool):
@@ -158,9 +185,10 @@ class TestMouseMove:
         assert result.error is not None
 
     @pytest.mark.asyncio
-    async def test_moves_with_scaled_coordinates(self, tool):
-        with patch("tool.pyautogui.moveTo") as mock_move:
+    async def test_moves_with_scaled_coordinates(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.moveTo") as mock_move:
             result = await tool.mouse_move(coordinate=(100, 100))
             expected = tool.scale_coordinates(ScalingSource.API, 100, 100)
             mock_move.assert_called_once_with(*expected)
         assert result.error is None
+        assert result.base64_image is not None
