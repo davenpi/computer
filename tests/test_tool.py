@@ -56,20 +56,17 @@ class TestScreenshot:
     def tool(self):
         return MacTool()
 
-    @pytest.mark.asyncio
     async def test_returns_base64_image(self, tool):
         result = await tool.screenshot()
         assert result.error is None
         assert result.base64_image is not None
 
-    @pytest.mark.asyncio
     async def test_decoded_image_is_valid_png(self, tool):
         result = await tool.screenshot()
         image_bytes = base64.b64decode(result.base64_image)
         img = Image.open(BytesIO(image_bytes))
         assert img.format == "PNG"
 
-    @pytest.mark.asyncio
     async def test_scaled_dimensions(self, tool):
         if tool._scaling_target is None:
             pytest.skip("No scaling target for this display")
@@ -85,18 +82,15 @@ class TestKey:
     def tool(self):
         return MacTool()
 
-    @pytest.mark.asyncio
     async def test_missing_text_returns_error(self, tool):
         result = await tool.key(None)
         assert result.error is not None
 
-    @pytest.mark.asyncio
     async def test_invalid_key_returns_error(self, tool):
         result = await tool.key("notarealkey")
         assert result.error is not None
         assert "unrecognized" in result.error
 
-    @pytest.mark.asyncio
     async def test_single_key(self, tool, mock_screenshot):
         with patch("mac.tool.pyautogui.press") as mock_press:
             result = await tool.key("Return")
@@ -104,7 +98,6 @@ class TestKey:
         assert result.error is None
         assert result.base64_image is not None
 
-    @pytest.mark.asyncio
     async def test_key_combo(self, tool, mock_screenshot):
         with patch("mac.tool.pyautogui.hotkey") as mock_hotkey:
             result = await tool.key("super+c")
@@ -112,7 +105,6 @@ class TestKey:
         assert result.error is None
         assert result.base64_image is not None
 
-    @pytest.mark.asyncio
     async def test_maps_x11_keys(self, tool):
         assert tool._map_key("super") == "command"
         assert tool._map_key("Return") == "return"
@@ -174,17 +166,14 @@ class TestMouseMove:
     def tool(self):
         return MacTool()
 
-    @pytest.mark.asyncio
     async def test_missing_coordinate_returns_error(self, tool):
         result = await tool.mouse_move(coordinate=None)
         assert result.error is not None
 
-    @pytest.mark.asyncio
     async def test_text_not_accepted(self, tool):
         result = await tool.mouse_move(text="hello", coordinate=(100, 100))
         assert result.error is not None
 
-    @pytest.mark.asyncio
     async def test_moves_with_scaled_coordinates(self, tool, mock_screenshot):
         with patch("mac.tool.pyautogui.moveTo") as mock_move:
             result = await tool.mouse_move(coordinate=(100, 100))
@@ -199,12 +188,10 @@ class TestClick:
     def tool(self):
         return MacTool()
 
-    @pytest.mark.asyncio
     async def test_text_not_accepted(self, tool):
         result = await tool.click("left_click", text="hello")
         assert result.error is not None
 
-    @pytest.mark.asyncio
     async def test_click_at_coordinate(self, tool, mock_screenshot):
         with (
             patch("mac.tool.pyautogui.moveTo") as mock_move,
@@ -217,7 +204,6 @@ class TestClick:
         assert result.error is None
         assert result.base64_image is not None
 
-    @pytest.mark.asyncio
     async def test_click_without_coordinate(self, tool, mock_screenshot):
         with (
             patch("mac.tool.pyautogui.moveTo") as mock_move,
@@ -228,7 +214,6 @@ class TestClick:
             mock_click.assert_called_once_with(button="left", clicks=1)
         assert result.error is None
 
-    @pytest.mark.asyncio
     async def test_click_with_modifier_key(self, tool, mock_screenshot):
         with (
             patch("mac.tool.pyautogui.click") as mock_click,
@@ -240,7 +225,6 @@ class TestClick:
             mock_click.assert_called_once_with(button="left", clicks=1)
             mock_up.assert_called_once_with("shift")
 
-    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "action,button,clicks",
         [
