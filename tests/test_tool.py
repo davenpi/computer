@@ -192,3 +192,67 @@ class TestMouseMove:
             mock_move.assert_called_once_with(*expected)
         assert result.error is None
         assert result.base64_image is not None
+
+
+class TestClick:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    @pytest.mark.asyncio
+    async def test_text_not_accepted(self, tool):
+        result = await tool.click("left_click", text="hello")
+        assert result.error is not None
+
+    @pytest.mark.asyncio
+    async def test_click_at_coordinate(self, tool, mock_screenshot):
+        with (
+            patch("mac.tool.pyautogui.moveTo") as mock_move,
+            patch("mac.tool.pyautogui.click") as mock_click,
+        ):
+            result = await tool.click("left_click", coordinate=(100, 100))
+            expected = tool.scale_coordinates(ScalingSource.API, 100, 100)
+            mock_move.assert_called_once_with(*expected)
+            mock_click.assert_called_once_with(button="left", clicks=1)
+        assert result.error is None
+        assert result.base64_image is not None
+
+    @pytest.mark.asyncio
+    async def test_click_without_coordinate(self, tool, mock_screenshot):
+        with (
+            patch("mac.tool.pyautogui.moveTo") as mock_move,
+            patch("mac.tool.pyautogui.click") as mock_click,
+        ):
+            result = await tool.click("left_click")
+            mock_move.assert_not_called()
+            mock_click.assert_called_once_with(button="left", clicks=1)
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_click_with_modifier_key(self, tool, mock_screenshot):
+        with (
+            patch("mac.tool.pyautogui.click") as mock_click,
+            patch("mac.tool.pyautogui.keyDown") as mock_down,
+            patch("mac.tool.pyautogui.keyUp") as mock_up,
+        ):
+            await tool.click("left_click", key="shift")
+            mock_down.assert_called_once_with("shift")
+            mock_click.assert_called_once_with(button="left", clicks=1)
+            mock_up.assert_called_once_with("shift")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "action,button,clicks",
+        [
+            ("left_click", "left", 1),
+            ("right_click", "right", 1),
+            ("middle_click", "middle", 1),
+            ("double_click", "left", 2),
+            ("triple_click", "left", 3),
+        ],
+    )
+    async def test_click_variants(self, tool, mock_screenshot, action, button, clicks):
+        with patch("mac.tool.pyautogui.click") as mock_click:
+            result = await tool.click(action)
+            mock_click.assert_called_once_with(button=button, clicks=clicks)
+        assert result.error is None

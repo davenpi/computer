@@ -161,6 +161,14 @@ class ScalingSource(StrEnum):
 
 SCREENSHOT_DELAY = 2.0
 
+CLICK_MAP = {
+    Action.LEFT_CLICK.value: {"button": "left", "clicks": 1},
+    Action.RIGHT_CLICK.value: {"button": "right", "clicks": 1},
+    Action.MIDDLE_CLICK.value: {"button": "middle", "clicks": 1},
+    Action.DOUBLE_CLICK.value: {"button": "left", "clicks": 2},
+    Action.TRIPLE_CLICK.value: {"button": "left", "clicks": 3},
+}
+
 
 class MacTool:
     def __init__(self):
@@ -192,7 +200,7 @@ class MacTool:
         action: str,
         text: str | None = None,
         coordinate: tuple[int, int] | None = None,
-        *args,
+        key: str | None = None,
         **kwargs,
     ):
 
@@ -202,6 +210,14 @@ class MacTool:
             return await self.key(text)
         elif action == Action.MOUSE_MOVE.value:
             return await self.mouse_move(text, coordinate)
+        elif action in (
+            Action.LEFT_CLICK.value,
+            Action.RIGHT_CLICK.value,
+            Action.MIDDLE_CLICK.value,
+            Action.DOUBLE_CLICK.value,
+            Action.TRIPLE_CLICK.value,
+        ):
+            return await self.click(action, text, coordinate, key)
 
     async def screenshot(self) -> ToolResult:
         """Capture the screen and return a scaled, base64-encoded PNG.
@@ -341,3 +357,43 @@ class MacTool:
             return round(x / x_scale), round(y / y_scale)
         else:
             return round(x * x_scale), round(y * y_scale)
+
+    async def click(
+        self,
+        action: str,
+        text: str | None = None,
+        coordinate: tuple[int, int] | None = None,
+        key: str | None = None,
+    ) -> ToolResult:
+        """Click the mouse.
+
+        Parameters
+        ----------
+        action : str
+            Which click action (left_click, right_click, etc.).
+        text : str or None
+            Not accepted for clicks. Returns error if provided.
+        coordinate : tuple[int, int] or None
+            If provided, move to this position before clicking.
+            If None, click at the current cursor position.
+        key : str or None
+            Modifier key to hold during the click (e.g. "shift", "ctrl").
+        """
+        if text is not None:
+            return ToolResult(error=f"text is not accepted for {action}")
+        if coordinate is not None:
+            try:
+                x, y = self.scale_coordinates(
+                    ScalingSource.API, coordinate[0], coordinate[1]
+                )
+            except ToolError as e:
+                return ToolResult(error=str(e))
+            pyautogui.moveTo(x, y)
+        modifier = self._map_key(key) if key else None
+        if modifier:
+            pyautogui.keyDown(modifier)
+        click_kwargs = CLICK_MAP[action]
+        pyautogui.click(**click_kwargs)
+        if modifier:
+            pyautogui.keyUp(modifier)
+        return await self._result_with_screenshot(ToolResult())
