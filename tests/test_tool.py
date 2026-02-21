@@ -315,6 +315,26 @@ class TestLeftClickDrag:
             mock_key_up.assert_called_once_with("shift")
 
 
+class TestMouseButton:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    async def test_mouse_down(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.mouseDown") as mock_down:
+            result = await tool.mouse_button("left_mouse_down")
+            mock_down.assert_called_once_with(button="left")
+        assert result.error is None
+        assert result.base64_image is not None
+
+    async def test_mouse_up(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.mouseUp") as mock_up:
+            result = await tool.mouse_button("left_mouse_up")
+            mock_up.assert_called_once_with(button="left")
+        assert result.error is None
+        assert result.base64_image is not None
+
+
 class TestCursorPosition:
     @pytest.fixture
     def tool(self):

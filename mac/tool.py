@@ -225,6 +225,30 @@ class MacTool:
             return await self.left_click_drag(text, start_coordinate, coordinate, key)
         elif action == Action.CURSOR_POSITION.value:
             return await self.cursor_position()
+        elif action in (
+            Action.LEFT_MOUSE_DOWN.value,
+            Action.LEFT_MOUSE_UP.value,
+        ):
+            return await self.mouse_button(action)
+
+    async def mouse_button(self, action: str) -> ToolResult:
+        """Press or release the left mouse button at the current position.
+
+        Parameters
+        ----------
+        action : str
+            Either "left_mouse_down" or "left_mouse_up".
+
+        Returns
+        -------
+        ToolResult
+            Empty output on success.
+        """
+        if action == Action.LEFT_MOUSE_DOWN.value:
+            pyautogui.mouseDown(button="left")
+        else:
+            pyautogui.mouseUp(button="left")
+        return await self._result_with_screenshot(ToolResult())
 
     async def cursor_position(self) -> ToolResult:
         """Get the current cursor position in API coordinate space.
