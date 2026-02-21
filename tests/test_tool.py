@@ -315,6 +315,69 @@ class TestLeftClickDrag:
             mock_key_up.assert_called_once_with("shift")
 
 
+class TestScroll:
+    @pytest.fixture
+    def tool(self):
+        return MacTool()
+
+    async def test_missing_direction_returns_error(self, tool):
+        result = await tool.scroll(scroll_amount=3)
+        assert result.error is not None
+
+    async def test_invalid_direction_returns_error(self, tool):
+        result = await tool.scroll(scroll_direction="diagonal", scroll_amount=3)
+        assert result.error is not None
+
+    async def test_missing_amount_returns_error(self, tool):
+        result = await tool.scroll(scroll_direction="up")
+        assert result.error is not None
+
+    async def test_negative_amount_returns_error(self, tool):
+        result = await tool.scroll(scroll_direction="up", scroll_amount=-1)
+        assert result.error is not None
+
+    async def test_scroll_up(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.scroll") as mock_scroll:
+            result = await tool.scroll(scroll_direction="up", scroll_amount=3)
+            mock_scroll.assert_called_once_with(3)
+        assert result.error is None
+        assert result.base64_image is not None
+
+    async def test_scroll_down(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.scroll") as mock_scroll:
+            await tool.scroll(scroll_direction="down", scroll_amount=5)
+            mock_scroll.assert_called_once_with(-5)
+
+    async def test_scroll_left(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.hscroll") as mock_hscroll:
+            await tool.scroll(scroll_direction="left", scroll_amount=2)
+            mock_hscroll.assert_called_once_with(-2)
+
+    async def test_scroll_right(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.hscroll") as mock_hscroll:
+            await tool.scroll(scroll_direction="right", scroll_amount=4)
+            mock_hscroll.assert_called_once_with(4)
+
+    async def test_scroll_at_coordinate(self, tool, mock_screenshot):
+        with patch("mac.tool.pyautogui.scroll") as mock_scroll:
+            await tool.scroll(
+                coordinate=(100, 100), scroll_direction="up", scroll_amount=3
+            )
+            expected = tool.scale_coordinates(ScalingSource.API, 100, 100)
+            mock_scroll.assert_called_once_with(3, x=expected[0], y=expected[1])
+
+    async def test_scroll_with_modifier_key(self, tool, mock_screenshot):
+        with (
+            patch("mac.tool.pyautogui.scroll") as mock_scroll,
+            patch("mac.tool.pyautogui.keyDown") as mock_down,
+            patch("mac.tool.pyautogui.keyUp") as mock_up,
+        ):
+            await tool.scroll(scroll_direction="up", scroll_amount=3, text="ctrl")
+            mock_down.assert_called_once_with("ctrl")
+            mock_scroll.assert_called_once_with(3)
+            mock_up.assert_called_once_with("ctrl")
+
+
 class TestMouseButton:
     @pytest.fixture
     def tool(self):

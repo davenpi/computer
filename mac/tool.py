@@ -202,6 +202,8 @@ class MacTool:
         start_coordinate: tuple[int, int] | None = None,
         coordinate: tuple[int, int] | None = None,
         key: str | None = None,
+        scroll_direction: ScrollDirection | None = None,
+        scroll_amount: int | None = None,
         **kwargs,
     ):
 
@@ -230,6 +232,65 @@ class MacTool:
             Action.LEFT_MOUSE_UP.value,
         ):
             return await self.mouse_button(action)
+        elif action == Action.SCROLL.value:
+            return await self.scroll(coordinate, scroll_direction, scroll_amount, text)
+
+    async def scroll(
+        self,
+        coordinate: tuple[int, int] | None = None,
+        scroll_direction: ScrollDirection | None = None,
+        scroll_amount: int | None = None,
+        text: str | None = None,
+    ) -> ToolResult:
+        """Scroll in a direction, optionally at a specific coordinate.
+
+        Parameters
+        ----------
+        coordinate : tuple[int, int] or None
+            If provided, move to this position before scrolling.
+        scroll_direction : ScrollDirection
+            One of "up", "down", "left", "right".
+        scroll_amount : int
+            Number of scroll clicks.
+        text : str or None
+            Modifier key to hold during the scroll (e.g. "ctrl").
+            Named ``text`` to match the reference implementation, which
+            overloads this parameter as a modifier key for scroll actions.
+            It's unclear whether Claude will send the modifier as ``text``
+            or ``key`` for scrolls — we follow the reference for now.
+
+        Returns
+        -------
+        ToolResult
+            Error on failure, empty output on success.
+        """
+        if scroll_direction not in ("up", "down", "left", "right"):
+            return ToolResult(
+                error="scroll_direction must be 'up', 'down', 'left', or 'right'"
+            )
+        if not isinstance(scroll_amount, int) or scroll_amount < 0:
+            return ToolResult(error="scroll_amount must be a non-negative int")
+        move_kwargs = {}
+        if coordinate is not None:
+            try:
+                x, y = self.scale_coordinates(
+                    ScalingSource.API, coordinate[0], coordinate[1]
+                )
+            except ToolError as e:
+                return ToolResult(error=str(e))
+            move_kwargs = {"x": x, "y": y}
+        modifier = self._map_key(text) if text else None
+        if modifier:
+            pyautogui.keyDown(modifier)
+        if scroll_direction in ("up", "down"):
+            clicks = scroll_amount if scroll_direction == "up" else -scroll_amount
+            pyautogui.scroll(clicks, **move_kwargs)
+        else:
+            clicks = scroll_amount if scroll_direction == "right" else -scroll_amount
+            pyautogui.hscroll(clicks, **move_kwargs)
+        if modifier:
+            pyautogui.keyUp(modifier)
+        return await self._result_with_screenshot(ToolResult())
 
     async def mouse_button(self, action: str) -> ToolResult:
         """Press or release the left mouse button at the current position.
