@@ -21,5 +21,8 @@ docs/
 # Notes
 notes.md
 
+# Logs
+logs/
+
 # Anthropic quickstarts
 anthropic-quickstarts/

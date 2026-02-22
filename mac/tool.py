@@ -18,7 +18,7 @@ from typing import Literal
 
 import pyautogui
 from PIL import Image
-from Quartz import CGDisplayBounds, CGMainDisplayID
+from Quartz import CGDisplayBounds, CGGetActiveDisplayList, CGMainDisplayID
 
 logger = logging.getLogger(__name__)
 
@@ -172,8 +172,17 @@ CLICK_MAP = {
 
 
 class MacTool:
-    def __init__(self):
-        bounds = CGDisplayBounds(CGMainDisplayID())
+    def __init__(self, display: int | None = None):
+        if display is not None:
+            err, display_ids, count = CGGetActiveDisplayList(10, None, None)
+            if display < 1 or display > count:
+                raise ValueError(f"display {display} out of range (1-{count})")
+            display_id = display_ids[display - 1]
+        else:
+            display_id = CGMainDisplayID()
+
+        self._display = display
+        bounds = CGDisplayBounds(display_id)
         self.width = int(bounds.size.width)
         self.height = int(bounds.size.height)
 
@@ -243,6 +252,8 @@ class MacTool:
             return await self.wait(duration)
         elif action == Action.ZOOM.value:
             return await self.zoom(region)
+        else:
+            return ToolResult(error=f"unknown action: {action}")
 
     async def zoom(self, region: tuple[int, int, int, int] | None = None) -> ToolResult:
         """Zoom into a region of the screen by cropping a screenshot.
@@ -426,9 +437,11 @@ class MacTool:
         """
         with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
             tmp_path = tmp.name
-            result = subprocess.run(
-                ["screencapture", "-x", tmp_path], capture_output=True
-            )
+            cmd = ["screencapture", "-x"]
+            if self._display is not None:
+                cmd += ["-D", str(self._display)]
+            cmd.append(tmp_path)
+            result = subprocess.run(cmd, capture_output=True)
             if result.returncode != 0:
                 return ToolResult(
                     error=f"screencapture failed: {result.stderr.decode()}"
