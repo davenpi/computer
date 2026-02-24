@@ -111,7 +111,15 @@ class BashSession:
 
         # Write the command, then echo the sentinel on both stdout and stderr
         # so we know when the command's output is done on both streams.
-        full_command = f"{command}\necho {sentinel}\necho {sentinel} >&2\n"
+        # The printf ensures a newline exists before the sentinel even if
+        # the command's output doesn't end with one (e.g. pbpaste).
+        full_command = (
+            f"{command}\n"
+            f"printf '\\n'\n"
+            f"echo {sentinel}\n"
+            f"printf '\\n' >&2\n"
+            f"echo {sentinel} >&2\n"
+        )
         self._process.stdin.write(full_command)
         self._process.stdin.flush()
 

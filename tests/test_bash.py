@@ -51,3 +51,11 @@ class TestBashSession:
         result = session.execute("ls /nonexistent 2>&1; echo done")
         assert "done" in result
         session.close()
+
+    def test_no_trailing_newline(self):
+        """Commands like pbpaste that don't end with a newline."""
+        session = BashSession()
+        result = session.execute("printf 'no newline here'")
+        assert result == "no newline here"
+        assert "__SENTINEL" not in result
+        session.close()
