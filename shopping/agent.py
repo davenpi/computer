@@ -8,6 +8,7 @@ import asyncio
 import logging
 import platform
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from dotenv import load_dotenv
 
 from mac.tool import MacTool, ToolResult
 
+from .prompt import build_freeform_prompt, build_task_prompt
 from .tools.bash import BashSession
 from .tools.text_editor import TextEditor
 
@@ -40,6 +42,89 @@ _ARCH = platform.machine()
 _DATE = datetime.today().strftime("%A, %B %-d, %Y")
 _CWD = Path.cwd()
 
+# Opus pricing per token (as of Feb 2026)
+COST_PER_INPUT_TOKEN = 5.0 / 1_000_000
+COST_PER_OUTPUT_TOKEN = 25.0 / 1_000_000
+
+
+@dataclass
+class UsageTracker:
+    """Accumulates token usage and cost across API calls."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    api_calls: int = 0
+    api_seconds: float = 0.0
+    wall_seconds: float = 0.0
+    iterations: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+    def record(self, response: BetaMessage, api_time: float) -> float:
+        """Record usage from a single API response.
+
+        Returns
+        -------
+        float
+            Cost of this step in USD.
+        """
+        usage = response.usage
+        cache_created = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        step_cost = (
+            usage.input_tokens * COST_PER_INPUT_TOKEN
+            + usage.output_tokens * COST_PER_OUTPUT_TOKEN
+            + cache_created * COST_PER_INPUT_TOKEN * 1.25
+            + cache_read * COST_PER_INPUT_TOKEN * 0.1
+        )
+        self.input_tokens += usage.input_tokens
+        self.output_tokens += usage.output_tokens
+        self.cache_creation_input_tokens += cache_created
+        self.cache_read_input_tokens += cache_read
+        self.api_calls += 1
+        self.api_seconds += api_time
+        self.iterations += 1
+        return step_cost
+
+    @property
+    def cost(self) -> float:
+        """Estimated cost in USD."""
+        return (
+            self.input_tokens * COST_PER_INPUT_TOKEN
+            + self.output_tokens * COST_PER_OUTPUT_TOKEN
+            + self.cache_creation_input_tokens * COST_PER_INPUT_TOKEN * 1.25
+            + self.cache_read_input_tokens * COST_PER_INPUT_TOKEN * 0.1
+        )
+
+    def step_summary(
+        self, iteration: int, max_iterations: int, step_cost: float, api_time: float
+    ) -> str:
+        """One-line summary for the current iteration."""
+        return (
+            f"[step {iteration}/{max_iterations}] "
+            f"step=${step_cost:.4f} "
+            f"cumulative=${self.cost:.4f} "
+            f"api={api_time:.1f}s "
+            f"cumulative_api={self.api_seconds:.1f}s"
+        )
+
+    def summary(self) -> str:
+        """Human-readable summary of usage."""
+        lines = [
+            "=== Usage Summary ===",
+            f"Iterations:    {self.iterations}",
+            f"API calls:     {self.api_calls}",
+            f"Input tokens:  {self.input_tokens:,}",
+            f"Output tokens: {self.output_tokens:,}",
+            f"Total tokens:  {self.input_tokens + self.output_tokens:,}",
+            f"Cache created: {self.cache_creation_input_tokens:,}",
+            f"Cache read:    {self.cache_read_input_tokens:,}",
+            f"API time:      {self.api_seconds:.1f}s",
+            f"Wall time:     {self.wall_seconds:.1f}s",
+            f"Est. cost:     ${self.cost:.4f}",
+        ]
+        return "\n".join(lines)
+
 
 def _build_system_prompt(cwd: Path) -> str:
     return f"""\
@@ -48,8 +133,7 @@ def _build_system_prompt(cwd: Path) -> str:
 architecture with internet access.
 * You can interact with the computer using mouse, \
 keyboard, and screenshot tools.
-* You have a bash tool for running shell commands. \
-Use pbpaste to read the clipboard after copying text.
+* You have a bash tool for running shell commands.
 * You have a text editor tool for reading and writing files.
 * Your working directory is {cwd}. Use relative paths \
 for all file operations.
@@ -58,10 +142,10 @@ for all file operations.
 "super+space", then type the app name and press Return.
 * The default browser is Safari. You can type URLs \
 directly into the address bar.
-* Use "super+l" to focus the browser address bar.
-* To copy a URL: focus the address bar with "super+l", \
-then copy with "super+c", then use bash with pbpaste \
-to read the clipboard.
+* To get the current Safari URL, run this bash command: \
+osascript -e 'tell application "Safari" to get URL of \
+current tab of front window'. This is the fastest and \
+most reliable way to read a URL.
 * When viewing a web page, take a screenshot to see \
 the current state. Scroll down if needed content is \
 not visible.
@@ -140,91 +224,113 @@ async def run(
     )
     logger.info("Prompt: %s", prompt)
 
+    usage = UsageTracker()
     loop_start = time.monotonic()
-    for i in range(max_iterations):
-        logger.info("--- Iteration %d/%d ---", i + 1, max_iterations)
+    try:
+        for i in range(max_iterations):
+            logger.info("--- Iteration %d/%d ---", i + 1, max_iterations)
 
-        if only_n_most_recent_images:
-            _prune_images(messages, only_n_most_recent_images)
+            if only_n_most_recent_images:
+                _prune_images(messages, only_n_most_recent_images)
 
-        t0 = time.monotonic()
-        response = client.beta.messages.create(
-            model=model,
-            max_tokens=MAX_TOKENS,
-            system=[{"type": "text", "text": system}],
-            messages=messages,
-            tools=tools,
-            betas=[BETA_FLAG],
-            extra_body={
-                "thinking": {
-                    "type": "enabled",
-                    "budget_tokens": THINKING_BUDGET,
-                }
-            },
-        )
-        api_time = time.monotonic() - t0
-
-        logger.info(
-            "Response: stop_reason=%s, blocks=%d, api=%.1fs",
-            response.stop_reason,
-            len(response.content),
-            api_time,
-        )
-
-        assistant_content = _response_to_params(response)
-        messages.append({"role": "assistant", "content": assistant_content})
-
-        # Process tool use blocks
-        tool_results: list[BetaToolResultBlockParam] = []
-        for block in assistant_content:
-            if not isinstance(block, dict):
-                continue
-            block_type = block.get("type")
-
-            if block_type == "thinking":
-                logger.info("[thinking] %s", block.get("thinking", ""))
-            elif block_type == "text":
-                logger.info("[assistant] %s", block["text"])
-            elif block_type == "tool_use":
-                tool_name = block.get("name")
-                inputs = block.get("input", {})
-                t0 = time.monotonic()
-
-                result = await _dispatch_tool(tool_name, inputs, mac_tool, bash, editor)
-
-                tool_time = time.monotonic() - t0
-                if result.error:
-                    logger.warning(
-                        "[%s] error (%.1fs): %s",
-                        tool_name,
-                        tool_time,
-                        result.error,
-                    )
-                else:
-                    logger.info(
-                        "[%s] ok (%.1fs) output=%s%s",
-                        tool_name,
-                        tool_time,
-                        (result.output or "")[:200],
-                        " [screenshot]" if result.base64_image else "",
-                    )
-
-                tool_results.append(_make_tool_result(result, block["id"]))
-
-        if not tool_results:
-            elapsed = time.monotonic() - loop_start
-            logger.info(
-                "Done in %d iterations, %.1fs total.",
-                i + 1,
-                elapsed,
+            t0 = time.monotonic()
+            response = client.beta.messages.create(
+                model=model,
+                max_tokens=MAX_TOKENS,
+                system=[{"type": "text", "text": system}],
+                messages=messages,
+                tools=tools,
+                betas=[BETA_FLAG],
+                extra_body={
+                    "cache_control": {"type": "ephemeral"},
+                    "thinking": {
+                        "type": "enabled",
+                        "budget_tokens": THINKING_BUDGET,
+                    },
+                },
             )
-            bash.close()
-            return messages
+            api_time = time.monotonic() - t0
+            step_cost = usage.record(response, api_time)
 
-        messages.append({"role": "user", "content": tool_results})
+            logger.info(
+                "Response: stop_reason=%s, blocks=%d, api=%.1fs",
+                response.stop_reason,
+                len(response.content),
+                api_time,
+            )
+            logger.info(usage.step_summary(i + 1, max_iterations, step_cost, api_time))
 
-    logger.warning("Hit max iterations (%d)", max_iterations)
-    bash.close()
+            assistant_content = _response_to_params(response)
+            messages.append({"role": "assistant", "content": assistant_content})
+
+            # Process tool use blocks
+            tool_results: list[BetaToolResultBlockParam] = []
+            for block in assistant_content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = block.get("type")
+
+                if block_type == "thinking":
+                    logger.info("[thinking] %s", block.get("thinking", ""))
+                elif block_type == "text":
+                    logger.info("[assistant] %s", block["text"])
+                elif block_type == "tool_use":
+                    tool_name = block.get("name")
+                    inputs = block.get("input", {})
+                    t0 = time.monotonic()
+
+                    result = await _dispatch_tool(
+                        tool_name, inputs, mac_tool, bash, editor
+                    )
+
+                    tool_time = time.monotonic() - t0
+                    if result.error:
+                        logger.warning(
+                            "[%s] error (%.1fs): %s",
+                            tool_name,
+                            tool_time,
+                            result.error,
+                        )
+                    else:
+                        logger.info(
+                            "[%s] ok (%.1fs) output=%s%s",
+                            tool_name,
+                            tool_time,
+                            (result.output or "")[:200],
+                            " [screenshot]" if result.base64_image else "",
+                        )
+
+                    tool_results.append(_make_tool_result(result, block["id"]))
+
+            if not tool_results:
+                logger.info("Agent finished (no tool calls)")
+                break
+
+            # Inject iteration budget awareness
+            remaining = max_iterations - (i + 1)
+            if remaining <= int(max_iterations * 0.2):
+                budget_msg = (
+                    f"[{remaining} iterations remaining. "
+                    f"Write your results now and stop browsing.]"
+                )
+            else:
+                budget_msg = (
+                    f"[Iteration {i + 1}/{max_iterations} — ${usage.cost:.2f} spent]"
+                )
+            tool_results.append({"type": "text", "text": budget_msg})
+
+            messages.append({"role": "user", "content": tool_results})
+        else:
+            logger.warning("Hit max iterations (%d)", max_iterations)
+
+    except KeyboardInterrupt:
+        logger.warning("Interrupted by user at iteration %d", i + 1)
+
+    finally:
+        usage.wall_seconds = time.monotonic() - loop_start
+        logger.info(usage.summary())
+        bash.close()
+
     return messages
 
 
@@ -397,7 +503,22 @@ def main():
     parser = argparse.ArgumentParser(
         description="Shopping agent with computer use + bash + editor"
     )
-    parser.add_argument("prompt", help="Task for the agent")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--item",
+        type=int,
+        help="Item number from the shopping brief (1-7)",
+    )
+    group.add_argument(
+        "--task",
+        type=str,
+        help="Freeform shopping task",
+    )
+    group.add_argument(
+        "--raw",
+        type=str,
+        help="Raw prompt (no shopping brief)",
+    )
     parser.add_argument(
         "-d",
         "--display",
@@ -411,7 +532,23 @@ def main():
         default=MAX_ITERATIONS,
         help="Max loop iterations",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the prompt and exit without running",
+    )
     args = parser.parse_args()
+
+    if args.item:
+        prompt = build_task_prompt(args.item)
+    elif args.task:
+        prompt = build_freeform_prompt(args.task)
+    else:
+        prompt = args.raw
+
+    if args.dry_run:
+        print(prompt)
+        return
 
     LOG_DIR.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -430,7 +567,7 @@ def main():
 
     asyncio.run(
         run(
-            prompt=args.prompt,
+            prompt=prompt,
             display=args.display,
             max_iterations=args.max_iterations,
         )
