@@ -231,7 +231,7 @@ async def run(
         model,
         cwd,
     )
-    logger.info("Prompt: %s", prompt)
+    logger.info("Prompt length: %d chars", len(prompt))
 
     usage = UsageTracker()
     loop_start = time.monotonic()
@@ -323,9 +323,7 @@ async def run(
                     f"Write your results now and stop browsing.]"
                 )
             else:
-                budget_msg = (
-                    f"[Iteration {i + 1}/{max_iterations} — ${usage.cost:.2f} spent]"
-                )
+                budget_msg = f"[Iteration {i + 1}/{max_iterations}]"
             tool_results.append({"type": "text", "text": budget_msg})
 
             messages.append({"role": "user", "content": tool_results})
