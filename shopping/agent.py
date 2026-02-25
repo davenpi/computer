@@ -108,17 +108,26 @@ class UsageTracker:
             f"cumulative_api={self.api_seconds:.1f}s"
         )
 
+    @property
+    def total_input_tokens(self) -> int:
+        """Total input tokens including cached."""
+        return (
+            self.input_tokens
+            + self.cache_creation_input_tokens
+            + self.cache_read_input_tokens
+        )
+
     def summary(self) -> str:
         """Human-readable summary of usage."""
         lines = [
             "=== Usage Summary ===",
             f"Iterations:    {self.iterations}",
             f"API calls:     {self.api_calls}",
-            f"Input tokens:  {self.input_tokens:,}",
+            f"Input tokens:  {self.total_input_tokens:,} "
+            f"(uncached={self.input_tokens:,} "
+            f"cache_write={self.cache_creation_input_tokens:,} "
+            f"cache_read={self.cache_read_input_tokens:,})",
             f"Output tokens: {self.output_tokens:,}",
-            f"Total tokens:  {self.input_tokens + self.output_tokens:,}",
-            f"Cache created: {self.cache_creation_input_tokens:,}",
-            f"Cache read:    {self.cache_read_input_tokens:,}",
             f"API time:      {self.api_seconds:.1f}s",
             f"Wall time:     {self.wall_seconds:.1f}s",
             f"Est. cost:     ${self.cost:.4f}",

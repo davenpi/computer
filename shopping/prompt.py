@@ -70,6 +70,9 @@ Important:
 - If a store has a sale or promotion, note it.
 - Once you have 3 good options written to the file, stop browsing \
 and finalize the results. Do not continue optimizing.
+- Only include options you actually visited and verified on-site. \
+Never recommend products from memory — every option must have a \
+real URL you navigated to.
 </TASK>
 """
 
@@ -124,5 +127,8 @@ Important:
 - Use the profile for sizing decisions.
 - Once you have 3 good options written to the file, stop browsing \
 and finalize the results. Do not continue optimizing.
+- Only include options you actually visited and verified on-site. \
+Never recommend products from memory — every option must have a \
+real URL you navigated to.
 </TASK>
 """
