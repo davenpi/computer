@@ -9,7 +9,7 @@ echo "=== Shopping batch started at $(date) ==="
 for item in 1 2 3 4 5 6 7; do
     echo ""
     echo "--- Item $item starting at $(date) ---"
-    python -m shopping.agent --item "$item" --max-iterations 40
+    python -m shopping.agent --item "$item" --max-iterations 55
     echo "--- Item $item finished at $(date) ---"
 
     # Brief pause between runs to let Safari settle
