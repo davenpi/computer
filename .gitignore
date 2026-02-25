@@ -15,8 +15,9 @@ wheels/
 # Claude
 .claude/
 
-# Docs
+# Docs and results
 *docs/
+*results/
 
 # Notes
 notes.md
